@@ -172,6 +172,17 @@ def store_teams(cur, conn, team_tuples):
     except:
         print('Failed to insert teams')
 
+def delete_all_schedules(cur, conn):
+    '''
+    Deletes all fixtures from the schedules table
+    '''
+    try:
+        cur.execute("DELETE FROM schedules")
+        conn.commit()
+        print('Schedules deleted')
+    except:
+        print('Could not delete schedule')
+
 def store_schedules(cur, conn, schedule):
     '''
     Stores the schedule of the team sent in the argument
@@ -184,11 +195,14 @@ def store_schedules(cur, conn, schedule):
         fixture_list.append(fixture_tuple)
     try:
         execute_values(cur, """INSERT INTO schedules (fixture_id, league_id, home_team_id, home_team_name,
-                    away_team_id, away_team_name, event_date, event_timestamp, status) VALUES %s 
-                    ON CONFLICT (fixture_id) DO NOTHING""", fixture_list)
+                away_team_id, away_team_name, event_date, event_timestamp, status) VALUES %s 
+                ON CONFLICT (fixture_id) DO NOTHING""", fixture_list)
         conn.commit()
-    except:
-        print('Failed to insert schedule')
+        print('new schedule uploaded')
+    except psycopg2.OperationalError as e :
+        print(e)
+
+
 
 def store_temp_fixture(cur, conn, fixture):
     '''

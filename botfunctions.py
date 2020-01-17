@@ -6,13 +6,16 @@ import logging
 from config import create_api
 import time
 from databasefunctions import get_player_list, port, username, password, update_num_subscribers, get_player_id, store_temp_fixture, get_player_name, delete_subscriber, store_schedules
-from databasefunctions import dbname, endpoint, set_cursor, open_database, store_subscriber, get_subscriber_list, get_schedule, get_team_name, check_subscription_details
+from databasefunctions import dbname, endpoint, set_cursor, open_database, store_subscriber, get_subscriber_list, get_schedule, get_team_name, check_subscription_details, delete_all_schedules
 import threading
 from datetime import datetime, timezone
 import multiprocessing
 import sched
 import requests
 import os
+from score_calculation import Stats
+import pytz
+import schedule
 
 # Initializations
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +36,8 @@ STOP_TRACKING_PROMPT = 'stop'
 DAY_SECS = 86400 # total seconds in 24 hours
 HOUR_SECS = 3600
 DELAY_MENTIONS = 600 #delay between checking for new mentions
+
+
 
 def match_full_names(tweet_text, keywords):
     '''
@@ -102,9 +107,6 @@ def check_mentions(api, keywords, since_id):
                     
         logger.info("Waiting...")
         time.sleep(DELAY_MENTIONS)
-
-def dummy_print():
-    print('Something gets printed')
     
 
 def start_tracking(api, cursor, connection):
@@ -243,7 +245,6 @@ def get_fixture_events(api, fixture_id, player_id, player_name, tweet_id):
          'dribbles': {'attempts': 2, 'success': 1, 'past': 0}, 'fouls': {'drawn': 1, 'committed': 3}, 
          'cards': {'yellow': 1, 'red': 0}, 'penalty': {'won': 0, 'commited': 0, 'success': 0, 'missed': 0, 'saved': 0}}
     '''
-
     tweet_str = f"Here are the updates for {player_name} from the game:\n {create_player_update_tweet_text(player_details)}"
     try:
         api.update_status(
@@ -257,29 +258,21 @@ def get_fixture_events(api, fixture_id, player_id, player_name, tweet_id):
     
 
 def create_player_update_tweet_text(player_details):
-    num_goals_scored = player_details['goals']['total'] 
-    num_assists = player_details['goals']['assists']
-    num_penalties = player_details['penalty']['success']
-    num_passes = player_details['passes']['total']
-    num_shots = player_details['shots']['total']
-    num_shots_on_target = player_details['shots']['on']
-    num_dribbles = player_details['dribbles']['success']
-    num_key_passes = player_details['passes']['key']
-    mins_played = player_details['minutes_played'] # can tell us if he was subbed
-    num_tackles = player_details['tackles']['total']
-    num_blocks = player_details['tackles']['blocks']
-    num_interceptions = player_details['tackles']['interceptions']
-    card_yellow = True if player_details['cards']['yellow'] > 0 else False
-    card_red = True if player_details['cards']['red'] > 0 else False
-
+    player_stats = Stats(player_details)
+    impact_score = player_stats.compute_impact_score()
+        
     # tweet_str = f"He scored {num_goals_scored} goals and provided {num_assists} assists. He played {num_key_passes} key passes and had {num_shots_on_target} shots on target. He tackled {num_tackles} times, blocked {num_blocks} shots and intercepted {num_interceptions} passes. He was taken off after {mins_played} minutes."
     # print(len(tweet_str))
     # start creating the string. 
-    tweet_str = f"Mins played: {mins_played}\nGoals: {num_goals_scored}\nAssists: {num_assists}\nShots on target: {num_shots_on_target}\nPenalties: {num_penalties}\nKey passes: {num_key_passes}\nDribbles: {num_dribbles}\nTackles: {num_tackles}\nBlocks: {num_blocks}\nInterceptions: {num_interceptions}\n"
-    if card_yellow == True:
+    tweet_str = f"Mins played: {player_stats.mins_played}\nGoals: {player_stats.num_goals_scored}\n \
+                Assists: {player_stats.num_assists}\nShots on target: {player_stats.num_shots_on_target}\nPenalties: {player_stats.num_penalties}\n \
+                Key passes: {player_stats.num_key_passes}\nDribbles: {player_stats.num_dribbles}\nTackles: {player_stats.num_tackles}\nBlocks: {player_stats.num_blocks}\n \
+                Interceptions: {player_stats.num_interceptions}\n"
+    if player_stats.card_yellow == True:
         tweet_str += f"Yellow card: Yes\n"
-    if card_red == True:
+    if player_stats.card_red == True:
         tweet_str += f"Red card: Yes\n"
+    tweet_str += f"Impact score: {impact_score}\n"
 
     return tweet_str
 
@@ -291,13 +284,22 @@ def get_players_from_db(cursor, connection):
     return players
 
 def update_schedules():
-    required_team_ids = [33, 39, 40, 42, 46, 47, 49, 50]
-    db_connection = open_database(dbname, username, password, endpoint, port)
-    cursor = set_cursor(db_connection)
-    # get fixtures for all these teams
-    for team_id in required_team_ids:
-        fixture_dicts = get_fixtures(team_id)
-        store_schedules(cursor, db_connection, fixture_dicts)
+    '''
+    Updates team schedules in the database on every Tuesday morning UTC time
+    '''
+    while True:
+        print('Updating schedules')
+        current_utc_time = datetime.now(pytz.utc)
+        if current_utc_time.isoweekday() == 2 and current_utc_time.hour == 2: #Update on Tuesday, 2:00AM UTC time
+            required_team_ids = [33, 39, 40, 42, 46, 47, 49, 50]
+            db_connection = open_database(dbname, username, password, endpoint, port)
+            cursor = set_cursor(db_connection)
+            delete_all_schedules(cursor, db_connection)
+            # get fixtures for all these teams
+            for team_id in required_team_ids:
+                fixture_dicts = get_fixtures(team_id)
+                store_schedules(cursor, db_connection, fixture_dicts)  
+            time.sleep(DAY_SECS)
 
 def get_fixtures(team_id):
     '''
@@ -321,8 +323,7 @@ def make_first_tweet():
     image_response = api.media_upload('players.png')
     print(image_response.media_id_string)
     api.update_status(status="""Here are the players available for tracking. To track the players write '@PlayerTracker2 track <player name>'. Please make sure you spell the name correctly.""",
-                         media_ids=[image_response.media_id_string])
-    
+                         media_ids=[image_response.media_id_string])  
 
 def main():
     # make_first_tweet()
@@ -344,9 +345,9 @@ def main():
     check_subscriber_process.start()
 
     # start another process to update fixture schedule once every week. Make sure to not update during games.
-    # Use scheule library not sched
-
-
+    # Use scheule library not sched. Update every Tuesday
+    update_schedules_process = multiprocessing.Process(target=update_schedules)
+    update_schedules_process.start()
 
 if __name__ == "__main__":
     main()

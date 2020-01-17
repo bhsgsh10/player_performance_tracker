@@ -4,6 +4,8 @@ import os
 import time
 import sched
 from datetime import datetime, timezone, timedelta
+import pytz
+import schedule
 
 
 scheduler = sched.scheduler(time.time, time.sleep)
@@ -78,7 +80,15 @@ if __name__ == "__main__":
 
     # read the rapid api key from the environment variables
     print(api_key)  
+    t = datetime.now(pytz.utc)
+    print(type(t.hour))
+    print(t.isoweekday())
+    # schedule.every().friday.at("13:59").do(print_time)
+    # while 1:
+    #     schedule.run_pending()
+    #     time.sleep(1)
 
+    
 
 
 
