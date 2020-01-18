@@ -44,7 +44,7 @@ def create_players_table(cur, conn):
     '''
     try:
         cur.execute("""CREATE TABLE players (player_id varchar(64) PRIMARY KEY, player_name text, 
-        team_id varchar(64) references teams(team_id), num_subscribers int);""")
+        team_id varchar(64) references teams(team_id), num_subscribers int, player_twitter_handle varchar(64));""")
         print('Created Players table')
     except:
         print("something went wrong creating the players table")
@@ -133,12 +133,13 @@ def store_subscriber(cur, conn, twitter_handle, player_name, tweet_id):
     update_num_subscribers(cur, conn, True, player_name)
 
 def store_players(cur, conn, player_tuples):
+    print(player_tuples)
     try:
-        execute_values(cur, """INSERT INTO players (player_id, player_name, team_id, num_subscribers) VALUES %s ON CONFLICT (player_id) DO NOTHING""", 
+        execute_values(cur, """INSERT INTO players (player_id, player_name, team_id, num_subscribers, player_twitter_handle) VALUES %s ON CONFLICT (player_id) DO NOTHING""", 
                     player_tuples)
         conn.commit()
-    except:
-        print('failed to store players')
+    except psycopg2.OperationalError as e:
+        print(e)
     
 def update_num_subscribers(cur, conn, incrementValue, player_name):
     '''
@@ -150,17 +151,16 @@ def update_num_subscribers(cur, conn, incrementValue, player_name):
     update_num_subscribers_from_id(cur, conn, True, player_id)
 
 def update_num_subscribers_from_id(cur, conn, incrementValue, player_id):
-    try:
-        print(f"player_id is {player_id}")
-        if incrementValue == True:
-            execute_values(cur, """UPDATE players SET num_subscribers=num_subscribers+1
-                            where player_id=%s""",[player_id])
-        else:
-            execute_values(cur, """UPDATE players SET num_subscribers=num_subscribers-1
-                            where player_id=%s and num_subscribers>1""",[player_id])
-        conn.commit()
-    except:
-        print('Failed to update num_subscribers in players table')
+    print(f"player_id is {player_id}")
+    if incrementValue == True:
+        cur.execute("UPDATE players SET num_subscribers=num_subscribers+1 where player_id=%s", (player_id,))
+    else:
+        cur.execute("UPDATE players SET num_subscribers=num_subscribers-1 where player_id=%s and num_subscribers>1", (player_id,))
+    conn.commit()
+    # try:
+        
+    # except:
+    #     print('Failed to update num_subscribers in players table')
 
 
 def store_teams(cur, conn, team_tuples):
@@ -285,7 +285,7 @@ def get_team_name(cur, conn, team_id):
 def check_subscription_details(cur, conn, twitter_handle):
     conn = open_database(dbname, username, password, endpoint, port)
     cur = set_cursor(conn)
-    select_query = f"select player_id where twitter_handle='{twitter_handle}"
+    select_query = f"select player_id from subscribers where twitter_handle='{twitter_handle}'"
     cur.execute(select_query)
     player_ids = cur.fetchall()
     parsed_player_ids = []
@@ -306,8 +306,10 @@ def delete_subscriber(twitter_handle):
     cur = set_cursor(conn)
     player_ids = check_subscription_details(cur, conn, twitter_handle)
     if len(player_ids) > 0:
+        print(twitter_handle)
         try:
-            execute_values(cur, """DELETE FROM subscribers WHERE twitter_handle=%s""",[twitter_handle])
+            cur.execute("DELETE FROM subscribers WHERE twitter_handle=%s", (twitter_handle,))
+            #execute_values(cur, """DELETE FROM subscribers WHERE twitter_handle=%s""",(twitter_handle,))
             conn.commit()
             # decrement the num_subscribers for these in the players table
             for player_id in player_ids:
@@ -338,29 +340,29 @@ if __name__ == "__main__":
     #  (42, 'Arsenal', 'Gunners')]
     # store_teams(cur, conn, teams)
     # #players
-    # players = [(18788, 'Jamie Vardy', 46),
-    #             (1465, 'Pierre-Emerick Aubameyang', 42),
-    #             (19194, 'Tammy Abraham', 49),
-    #             (909, 'Marcus Rashford', 33),
-    #             (645, 'Raheem Sterling', 50),
-    #             (184, 'Harry Kane', 47),
-    #             (642, 'Sergio Aguero', 50),
-    #             (306, 'Mohamed Salah', 40),
-    #             (304, 'Sadio Mane', 40),
-    #             (17, 'Christian Pulisic', 49),
-    #             (629, 'Kevin De Bruyne', 50),
-    #             (283, 'Trent Alexander-Arnold', 40),
-    #             (186, 'Son Heung-Min', 47),
-    #             (172, 'Dele Ali', 47),
-    #             (290, 'Virgil van Dijk', 40),
-    #             (2285, 'Antonio Rudiger', 49),
-    #             (2935, 'Harry Macguire', 33),
-    #             (2294, 'Willian', 49),
-    #             (18784, 'James Maddison', 46),
-    #             (2887, 'Raùl Jimenez', 39),
-    #             (18753, 'Adama Traoré', 39)]
+    # players = [(18788, 'Jamie Vardy', 46, 0, 'vardy7'),
+    #             (1465, 'Pierre-Emerick Aubameyang', 42, 0, 'Aubameyang7'),
+    #             (19194, 'Tammy Abraham', 49, 0, 'tammyabraham'),
+    #             (909, 'Marcus Rashford', 33, 0,  'MarcusRashford'),
+    #             (645, 'Raheem Sterling', 50, 0, 'sterling7'),
+    #             (184, 'Harry Kane', 47, 0,  'HKane'),
+    #             (642, 'Sergio Aguero', 50, 0, 'aguerosergiokun'),
+    #             (306, 'Mohamed Salah', 40, 0, 'MoSalah'),
+    #             (304, 'Sadio Mane', 40, 0, ''),
+    #             (17, 'Christian Pulisic', 49, 0, 'cpulisic_10'),
+    #             (629, 'Kevin De Bruyne', 50, 0, 'DeBruyneKev'),
+    #             (283, 'Trent Alexander-Arnold', 40, 0, 'trentaa98'),
+    #             (186, 'Son Heung-Min', 47, 0, 'hm_sin7'),
+    #             (172, 'Dele Ali', 47, 0, ''),
+    #             (290, 'Virgil van Dijk', 40, 0, 'VirgilvDijk'),
+    #             (2285, 'Antonio Rudiger', 49, 0, 'ToniRuediger'),
+    #             (2935, 'Harry Macguire', 33, 0, 'HarryMaguire93'),
+    #             (2294, 'Willian', 49, 0, 'willianborges88'),
+    #             (18784, 'James Maddison', 46, 0, 'Madders10'),
+    #             (2887, 'Raùl Jimenez', 39, 0, 'Raul_Jimenez9'),
+    #             (18753, 'Adama Traoré', 39, 0, 'AdamaTrd37')]
                 
     # store_players(cur, conn, players)
 
-    create_temp_fixtures_table(cur, conn)
+    #create_temp_fixtures_table(cur, conn)
     close_database(conn, cur)

@@ -5,7 +5,7 @@ import tweepy
 import logging
 from config import create_api
 import time
-from databasefunctions import get_player_list, port, username, password, update_num_subscribers, get_player_id, store_temp_fixture, get_player_name, delete_subscriber, store_schedules
+from databasefunctions import get_player_list, port, username, password, update_num_subscribers, get_player_id, store_temp_fixture, get_player_name, delete_subscriber, store_schedules, update_num_subscribers_from_id
 from databasefunctions import dbname, endpoint, set_cursor, open_database, store_subscriber, get_subscriber_list, get_schedule, get_team_name, check_subscription_details, delete_all_schedules
 import threading
 from datetime import datetime, timezone
@@ -35,7 +35,7 @@ LINEUP_STATUS_NA = 'NA'
 STOP_TRACKING_PROMPT = 'stop'
 DAY_SECS = 86400 # total seconds in 24 hours
 HOUR_SECS = 3600
-DELAY_MENTIONS = 600 #delay between checking for new mentions
+DELAY_MENTIONS = 60 #delay between checking for new mentions
 
 
 
@@ -65,18 +65,20 @@ def check_mentions(api, keywords, since_id):
             #     continue
             # if the tweet has not been replied to and if it is not the initial tweet then continue with 
             # the process else go to the next value in the loop
+            if STOP_TRACKING_PROMPT in tweet.text:
+                # remove subscriber from the subscribers table and stop sending any more updates.
+                logger.info('Found stop')
+                delete_subscriber(tweet.user.screen_name)
+                continue
             if tweet.in_reply_to_status_id is not None:
                 continue
             if str(tweet.id) != INITIAL_TWEET_ID:
                 # If a user decides to stop tracking, then tracking will stop for all the players he has subscribed to. This can be 
                 # modified later. // TO ADD
-                if STOP_TRACKING_PROMPT in tweet.text:
-                    # remove subscriber from the subscribers table and stop sending any more updates.
-                    delete_subscriber(tweet.user.screen_name)
-                    continue
                 matched_player = match_full_names(tweet.text, keywords)
                 if  matched_player is not None:
                     logger.info(f"Answering to {tweet.user.name}")
+                    logger.info(f"Tweet text is {tweet.text}")
 
                     if not tweet.user.following:
                         # follow the user and add his information to the database.
@@ -109,7 +111,7 @@ def check_mentions(api, keywords, since_id):
         time.sleep(DELAY_MENTIONS)
     
 
-def start_tracking(api, cursor, connection):
+def start_tracking(api):
     '''
     update the players table to include another column that would record number of subscribers who are
     tracking the player. Increment this number when we find a new subscriber who wishes to track this player
@@ -141,7 +143,7 @@ def start_tracking(api, cursor, connection):
                 # time difference between fixtures
                 time_diff = abs(fixture_timestamp - epoch_now)
                 #if fixture_timestamp > epoch_now and time_diff <= 86400:
-                if time_diff <= 172800: 
+                if time_diff <= DAY_SECS: 
                     # this means the game is within 24 hours, add it to temp_fixture table
                     print(f"{fixture[3]} vs {fixture[5]} to start at {fixture[6]}")
                     # store_temp_fixture(cursor, connection, fixture)
@@ -288,9 +290,9 @@ def update_schedules():
     Updates team schedules in the database on every Tuesday morning UTC time
     '''
     while True:
-        print('Updating schedules')
         current_utc_time = datetime.now(pytz.utc)
         if current_utc_time.isoweekday() == 2 and current_utc_time.hour == 2: #Update on Tuesday, 2:00AM UTC time
+            print('Updating schedules')
             required_team_ids = [33, 39, 40, 42, 46, 47, 49, 50]
             db_connection = open_database(dbname, username, password, endpoint, port)
             cursor = set_cursor(db_connection)
@@ -299,7 +301,7 @@ def update_schedules():
             for team_id in required_team_ids:
                 fixture_dicts = get_fixtures(team_id)
                 store_schedules(cursor, db_connection, fixture_dicts)  
-            time.sleep(DAY_SECS)
+        time.sleep(DAY_SECS)
 
 def get_fixtures(team_id):
     '''
@@ -341,13 +343,15 @@ def main():
     mentions_process.start()
 
     # start another process to go through all subscribers
-    check_subscriber_process = multiprocessing.Process(target=start_tracking, args=(api, cursor, db_connection,))
+    check_subscriber_process = multiprocessing.Process(target=start_tracking, args=(api,))
     check_subscriber_process.start()
 
     # start another process to update fixture schedule once every week. Make sure to not update during games.
     # Use scheule library not sched. Update every Tuesday
     update_schedules_process = multiprocessing.Process(target=update_schedules)
     update_schedules_process.start()
+
+
 
 if __name__ == "__main__":
     main()
