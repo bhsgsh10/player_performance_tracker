@@ -35,7 +35,7 @@ LINEUP_STATUS_NA = 'NA'
 STOP_TRACKING_PROMPT = 'stop'
 DAY_SECS = 86400 # total seconds in 24 hours
 HOUR_SECS = 3600
-DELAY_MENTIONS = 60 #delay between checking for new mentions
+DELAY_MENTIONS = 240 #delay between checking for new mentions
 
 
 
@@ -65,11 +65,7 @@ def check_mentions(api, keywords, since_id):
             #     continue
             # if the tweet has not been replied to and if it is not the initial tweet then continue with 
             # the process else go to the next value in the loop
-            if STOP_TRACKING_PROMPT in tweet.text:
-                # remove subscriber from the subscribers table and stop sending any more updates.
-                logger.info('Found stop')
-                delete_subscriber(tweet.user.screen_name)
-                continue
+            
             if tweet.in_reply_to_status_id is not None:
                 continue
             if str(tweet.id) != INITIAL_TWEET_ID:
@@ -79,10 +75,9 @@ def check_mentions(api, keywords, since_id):
                 if  matched_player is not None:
                     logger.info(f"Answering to {tweet.user.name}")
                     logger.info(f"Tweet text is {tweet.text}")
-
+                    store_subscriber(cursor, connection, tweet.user.screen_name, matched_player, tweet.id)
                     if not tweet.user.following:
                         # follow the user and add his information to the database.
-                        store_subscriber(cursor, connection, tweet.user.screen_name, matched_player, tweet.id)
                         tweet.user.follow()
                     try:
                         api.update_status(
@@ -93,19 +88,30 @@ def check_mentions(api, keywords, since_id):
                     except:
                         logger.info("Moving on...")
                 else:
-
-                    logger.info(f"{tweet.id} problematic")
-                    # if no player is found, notify the user that he should pick players from the given list. Consecutive duplicate
-                    # tweets/replies cannot be posted using Twitter's API.
-                    try:
-                        api.update_status(
-                            status=f"@{tweet.user.screen_name} I could not find the player you're looking for. Please choose a player from the list here: shorturl.at/wCLSU\n",
-                            in_reply_to_status_id=tweet.id,
-                            auto_populate_reply_metadata=True
-                        )
-                    except:
-                        # check for error code 187 (duplicate tweet)
-                        print('Something went wrong here')
+                    # Older stop tweets should be ignored. 
+                    if STOP_TRACKING_PROMPT in tweet.text:
+                        logger.info('Found stop')
+                        if tweet.id >= new_since_id:
+                            # remove subscriber from the subscribers table and stop sending any more updates.
+                            
+                            delete_subscriber(tweet.user.screen_name)
+                            api.destroy_friendship(tweet.id)
+                            continue
+                        else:
+                            break #mentions before the stop tweet should not be honored
+                    else:
+                        logger.info(f"{tweet.id} problematic")
+                        # if no player is found, notify the user that he should pick players from the given list. Consecutive duplicate
+                        # tweets/replies cannot be posted using Twitter's API.
+                        try:
+                            api.update_status(
+                                status=f"@{tweet.user.screen_name} I could not find the player you're looking for. Please choose a player from the list here: shorturl.at/wCLSU\n",
+                                in_reply_to_status_id=tweet.id,
+                                auto_populate_reply_metadata=True
+                            )
+                        except:
+                            # check for error code 187 (duplicate tweet)
+                            print('Something went wrong here')
                     
         logger.info("Waiting...")
         time.sleep(DELAY_MENTIONS)
@@ -136,27 +142,36 @@ def start_tracking(api):
             schedule = get_schedule(cursor, connection, team_id)
             for fixture in schedule:
                 # pick the event_timestamp and compare the difference between now and the event_timestamp
-                now_utc = datetime.now(timezone.utc).strftime("%b %d %Y %H:%M:%S")
+                now_utc = datetime.now().strftime("%b %d %Y %H:%M:%S")
                 epoch_now = int(time.mktime(time.strptime(now_utc, "%b %d %Y %H:%M:%S")))
+                
                 fixture_timestamp = fixture[7]
+                
                 fixture_id = fixture[0]
                 # time difference between fixtures
                 time_diff = abs(fixture_timestamp - epoch_now)
                 #if fixture_timestamp > epoch_now and time_diff <= 86400:
                 if time_diff <= DAY_SECS: 
+                    print(f"epoch_now is {epoch_now}")
+                    print(f"fixture_timestamp is {fixture_timestamp}")
                     # this means the game is within 24 hours, add it to temp_fixture table
                     print(f"{fixture[3]} vs {fixture[5]} to start at {fixture[6]}")
                     # store_temp_fixture(cursor, connection, fixture)
                     # once the fixture is stored in the temp_fixtures table, we can schedule a call to look up
                     # the table one hour before the event timestamp. 
                     delay = float(time_diff) - float(HOUR_SECS) if time_diff > HOUR_SECS else 0
+                    print(delay)
                     # delay = 10
                     team_name = get_team_name(cursor, connection, team_id)
-                    scheduler.enter(delay, 1, tweet_lineup_update, (api, team_id, team_name, player_id, fixture_id, twitter_handle, original_tweet_id, fixture_timestamp,))
-                    scheduler.run()
+                    player_updates_process = multiprocessing.Process(target=player_updates, args=(delay, api, team_id, team_name, player_id, fixture_id, twitter_handle, original_tweet_id, fixture_timestamp,))
+                    player_updates_process.start()
 
         time.sleep(DAY_SECS)
 
+
+def player_updates(delay, api, team_id, team_name, player_id, fixture_id, twitter_handle, original_tweet_id, fixture_timestamp):
+    scheduler.enter(delay, 1, tweet_lineup_update, (api, team_id, team_name, player_id, fixture_id, twitter_handle, original_tweet_id, fixture_timestamp,))
+    scheduler.run()
 
 def tweet_lineup_update(api, team_id, team_name, player_id, fixture_id, twitter_handle, tweet_id, start_timestamp):
     '''
@@ -339,8 +354,8 @@ def main():
 
     # start processes. Each process will use its own cursor and db connection.
     # start process to monitor mentions
-    mentions_process = multiprocessing.Process(target=check_mentions, args=(api, players, since_id,))
-    mentions_process.start()
+    # mentions_process = multiprocessing.Process(target=check_mentions, args=(api, players, since_id,))
+    # mentions_process.start()
 
     # start another process to go through all subscribers
     check_subscriber_process = multiprocessing.Process(target=start_tracking, args=(api,))

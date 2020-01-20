@@ -46,7 +46,8 @@ class Stats:
         self.num_fouls = player_details['fouls']['committed']
         self.card_yellow = True if player_details['cards']['yellow'] > 0 else False
         self.card_red = True if player_details['cards']['red'] > 0 else False
-        self.num_penalty_conceded = player_details['penalty']['committed']
+        # there's a spelling error in the response, which is why here we have used 'commited' instead of 'committed'
+        self.num_penalty_conceded = player_details['penalty']['commited'] 
     
     #Methods to compute impact score
     def compute_impact_score(self):
@@ -80,7 +81,7 @@ class Stats:
             impact_score = 6 + (weights['goals']*self.num_goals_scored) + (weights['assists']*self.num_assists) + (weights['tackles']*self.num_tackles) + \
                             (weights['interceptions']*self.num_interceptions) - (weights['penalty_conceded']*self.num_penalty_conceded) \
                                 - (weights['fouls']*self.num_fouls) - card_weight
-        return impact_score
+        return min(impact_score, 10)
 
     def get_weights_forward(self):
         '''
@@ -97,6 +98,7 @@ class Stats:
         weight_dictionary['yellow'] = 0.2
         weight_dictionary['tackles'] = 0.1
         weight_dictionary['duels'] = 0.1
+        weight_dictionary['interceptions'] = 0.1
         weight_dictionary['penalty_conceded'] = 0.3
         return weight_dictionary
 
@@ -113,7 +115,9 @@ class Stats:
         weight_dictionary['fouls'] = 0.1
         weight_dictionary['red'] = 0.5
         weight_dictionary['yellow'] = 0.2
-        weight_dictionary['tackles'] = 0.2
+        weight_dictionary['tackles'] = 0.1
+        weight_dictionary['duels'] = 0.1
+        weight_dictionary['interceptions'] = 0.2
         weight_dictionary['penalty_conceded'] = 0.3
 
         return weight_dictionary
@@ -129,8 +133,10 @@ class Stats:
         weight_dictionary['red'] = 0.5
         weight_dictionary['yellow'] = 0.2
         weight_dictionary['tackles'] = 0.3
+        weight_dictionary['blocks'] = 0.2
+        weight_dictionary['duels'] = 0.2
         weight_dictionary['interceptions'] = 0.5
-        weight_dictionary['goals_conceded'] = 0.3
+        weight_dictionary['penalty_conceded'] = 0.3
 
         return weight_dictionary
 

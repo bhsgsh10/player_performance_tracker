@@ -117,6 +117,8 @@ def store_subscriber(cur, conn, twitter_handle, player_name, tweet_id):
     '''
     # First run a select query on the player table to retrieve player_id and team_id. Then form a tuple of name, id and team_id and
     #  enter in the subscriber table
+    initial_count = 0
+    final_count = 0
     try:
         select_query = f"select player_id, team_id from players where player_name='{player_name}'"
         cur.execute(select_query)
@@ -124,13 +126,20 @@ def store_subscriber(cur, conn, twitter_handle, player_name, tweet_id):
         player_id = player[0]
         team_id = player[1]
         print(f"player_id is {player_id} and team_id is {team_id}")
+        count_query = f"select count(*) from subscribers"
+        cur.execute(count_query)
+        initial_count = cur.fetchall()[0][0]
         execute_values(cur, """INSERT INTO subscribers (twitter_handle, player_id, team_id, original_tweet_id) VALUES %s
                         ON CONFLICT (twitter_handle, player_id) DO NOTHING""", [(twitter_handle, player_id, team_id, tweet_id)])
         conn.commit()
+        # it is possible that this subscriber already exists, so no new entry will be made in the subscribers table. In that
+        # case update_num_subscribers should not be called
+        cur.execute(count_query)
+        final_count = cur.fetchall()[0][0]
     except:
         print("Failed to run one or more queries")    
-
-    update_num_subscribers(cur, conn, True, player_name)
+    if final_count > initial_count:
+        update_num_subscribers(cur, conn, True, player_name)
 
 def store_players(cur, conn, player_tuples):
     print(player_tuples)
