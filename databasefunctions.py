@@ -78,7 +78,7 @@ def create_subscribers_table(cur, conn):
     '''
     try:
         cur.execute("""CREATE TABLE subscribers (twitter_handle varchar(64), player_id varchar(64) references players,
-        team_id varchar(64) references teams, original_tweet_id varchar(64), PRIMARY KEY(twitter_handle, player_id));""")
+        team_id varchar(64) references teams, original_tweet_id varchar(64), tracking_status bool, PRIMARY KEY(twitter_handle, player_id));""")
         print('Created team schedule')
     except:
         print("something wrong with the subscribers table")
@@ -130,16 +130,30 @@ def store_subscriber(cur, conn, twitter_handle, player_name, tweet_id):
         cur.execute(count_query)
         initial_count = cur.fetchall()[0][0]
         execute_values(cur, """INSERT INTO subscribers (twitter_handle, player_id, team_id, original_tweet_id) VALUES %s
-                        ON CONFLICT (twitter_handle, player_id) DO NOTHING""", [(twitter_handle, player_id, team_id, tweet_id)])
+                        ON CONFLICT (twitter_handle, player_id) DO NOTHING""", [(twitter_handle, player_id, team_id, tweet_id, False)])
         conn.commit()
         # it is possible that this subscriber already exists, so no new entry will be made in the subscribers table. In that
-        # case update_num_subscribers should not be called
+        # case update_num_subscribers should not be called  
         cur.execute(count_query)
         final_count = cur.fetchall()[0][0]
     except:
         print("Failed to run one or more queries")    
     if final_count > initial_count:
         update_num_subscribers(cur, conn, True, player_name)
+
+def update_tracking_status(twitter_handle, player_id, value_to_set):
+    '''
+    Updates tracking_status for given subscriber and player_id.
+    '''
+    conn = open_database(dbname, username, password, endpoint, port)
+    cur = set_cursor(conn)
+    try:
+        cur.execute("UPDATE subscribers SET tracking_status=%s where twitter_handle=%s and player_id=%s", (value_to_set, twitter_handle, player_id,))
+        conn.commit()
+    except psycopg2.OperationalError as e:
+        print(e)
+
+    close_database(conn, cur)
 
 def store_players(cur, conn, player_tuples):
     print(player_tuples)
@@ -211,8 +225,6 @@ def store_schedules(cur, conn, schedule):
     except psycopg2.OperationalError as e :
         print(e)
 
-
-
 def store_temp_fixture(cur, conn, fixture):
     '''
     Stores given fixture in the temp_fixtures table
@@ -267,7 +279,7 @@ def get_player_id(cur, conn, player_name):
     '''
     select_query = f"select player_id from players where player_name='{player_name}'"
     cur.execute(select_query)
-    player_id = cur.fetchall()[0]
+    player_id = cur.fetchall()[0][0]
     return player_id
 
 def get_player_name(player_id):
@@ -304,6 +316,23 @@ def check_subscription_details(cur, conn, twitter_handle):
     close_database(conn, cur)
     return parsed_player_ids
 
+def check_subscriber_exists(twitter_handle, player_name):
+    conn = open_database(dbname, username, password, endpoint, port)
+    cur = set_cursor(conn)
+    # get player_id
+    player_id = get_player_id(cur, conn, player_name)
+    select_query = f"select * from subscribers where twitter_handle='{twitter_handle}' and player_id='{player_id}'"
+    cur.execute(select_query)
+    records = cur.fetchall()
+    if len(records) > 0:
+        if records[0] is None:
+            return False
+        else:
+            return True
+    else:
+        return False
+
+
 #############################################################
 # Deletions
 #############################################################
@@ -331,6 +360,8 @@ def delete_subscriber(twitter_handle):
 if __name__ == "__main__":
     # create the tables
     #Set database connection
+    update_tracking_status('ghoshbhaskar10', '642', True)
+    '''
     conn = open_database(dbname, username, password, endpoint, port)
     cur = set_cursor(conn)
    # wipe_database(cur)
@@ -375,3 +406,4 @@ if __name__ == "__main__":
 
     #create_temp_fixtures_table(cur, conn)
     close_database(conn, cur)
+    '''
