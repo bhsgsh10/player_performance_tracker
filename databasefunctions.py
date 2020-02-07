@@ -129,7 +129,7 @@ def store_subscriber(cur, conn, twitter_handle, player_name, tweet_id):
         count_query = f"select count(*) from subscribers"
         cur.execute(count_query)
         initial_count = cur.fetchall()[0][0]
-        execute_values(cur, """INSERT INTO subscribers (twitter_handle, player_id, team_id, original_tweet_id) VALUES %s
+        execute_values(cur, """INSERT INTO subscribers (twitter_handle, player_id, team_id, original_tweet_id, tracking_status) VALUES %s
                         ON CONFLICT (twitter_handle, player_id) DO NOTHING""", [(twitter_handle, player_id, team_id, tweet_id, False)])
         conn.commit()
         # it is possible that this subscriber already exists, so no new entry will be made in the subscribers table. In that
@@ -141,14 +141,18 @@ def store_subscriber(cur, conn, twitter_handle, player_name, tweet_id):
     if final_count > initial_count:
         update_num_subscribers(cur, conn, True, player_name)
 
-def update_tracking_status(twitter_handle, player_id, value_to_set):
+def update_tracking_status(twitter_handle=None, player_id=None, value_to_set=False):
     '''
-    Updates tracking_status for given subscriber and player_id.
+    Updates tracking_status for given subscriber and player_id. If nothing is specified, then 
+    tracking status is set to False for all rows in the table
     '''
     conn = open_database(dbname, username, password, endpoint, port)
     cur = set_cursor(conn)
+    update_query = "UPDATE subscribers SET tracking_status=%s", (value_to_set,)
+    if twitter_handle is not None and player_id is not None:
+        update_query = "UPDATE subscribers SET tracking_status=%s where twitter_handle=%s and player_id=%s", (value_to_set, twitter_handle, player_id,)
     try:
-        cur.execute("UPDATE subscribers SET tracking_status=%s where twitter_handle=%s and player_id=%s", (value_to_set, twitter_handle, player_id,))
+        cur.execute(update_query)
         conn.commit()
     except psycopg2.OperationalError as e:
         print(e)

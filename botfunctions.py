@@ -230,7 +230,7 @@ def start_tracking(api):
                         player_updates_process = multiprocessing.Process(target=player_updates, args=(delay, api, team_id, team_name, player_id, fixture_id, twitter_handle, original_tweet_id, fixture_timestamp, epoch_now,))
                         player_updates_process.start()
 
-        time.sleep(MIN_SECS)
+        time.sleep(MIN_SECS*5)
 
 
 def player_updates(delay, api, team_id, team_name, player_id, fixture_id,
@@ -397,6 +397,9 @@ def main():
     players = get_players_from_db(cursor, db_connection)
     cursor.close()
     db_connection.close()
+    
+    # reset tracking status for all players for all subscribers
+    update_tracking_status()
 
     # start processes. Each process will use its own cursor and db connection.
     # start process to monitor mentions
@@ -414,7 +417,7 @@ def main():
 
     '''
     TASKS: 
-    1. Add tracking status to the subscribers table
+    1. Add tracking status to the subscribers table. Boolean.
     2. Reset tracking status when server is restarting
     Tracking status should be false when row is added to the subscribers table. It should be updated only when we call the 
     startTracking() function. startTracking() will identify for which subscriber, player pair we need to start tracking. Based on
