@@ -148,9 +148,9 @@ def update_tracking_status(twitter_handle=None, player_id=None, value_to_set=Fal
     '''
     conn = open_database(dbname, username, password, endpoint, port)
     cur = set_cursor(conn)
-    update_query = "UPDATE subscribers SET tracking_status=%s", (value_to_set,)
+    update_query = f"UPDATE subscribers SET tracking_status={value_to_set}"
     if twitter_handle is not None and player_id is not None:
-        update_query = "UPDATE subscribers SET tracking_status=%s where twitter_handle=%s and player_id=%s", (value_to_set, twitter_handle, player_id,)
+        update_query = f"UPDATE subscribers SET tracking_status={value_to_set} where twitter_handle='{twitter_handle}' and player_id='{player_id}'"
     try:
         cur.execute(update_query)
         conn.commit()
