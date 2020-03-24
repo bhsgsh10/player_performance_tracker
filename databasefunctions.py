@@ -245,7 +245,7 @@ def store_temp_fixture(cur, conn, fixture):
         print('Failed to insert fixture')
 
 ######################################################
-# Functions for readiing values from tables
+# Functions for reading values from tables
 ######################################################
 def get_player_list(cur, conn):
     '''
@@ -297,6 +297,18 @@ def get_player_name(player_id):
     player_name = cur.fetchall()[0][0]
     close_database(conn, cur)
     return player_name
+
+def get_player_twitter_handle(player_id):
+    '''
+    Returns player's Twitter handle if available
+    '''
+    conn = open_database(dbname, username, password, endpoint, port)
+    cur = set_cursor(conn)
+    select_query = f"select player_twitter_handle from players where player_id='{player_id}'"
+    cur.execute(select_query)
+    twitter_handle = cur.fetchall()[0][0]
+    close_database(conn, cur)
+    return twitter_handle
 
 def get_team_name(cur, conn, team_id):
     '''

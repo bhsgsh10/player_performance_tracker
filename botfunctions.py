@@ -6,7 +6,7 @@ import logging
 from config import create_api
 import time
 from databasefunctions import get_player_list, port, username, password, update_num_subscribers, get_player_id, store_temp_fixture, get_player_name, delete_subscriber, store_schedules, update_num_subscribers_from_id, update_tracking_status
-from databasefunctions import dbname, endpoint, set_cursor, open_database, store_subscriber, get_subscriber_list, get_schedule, get_team_name, check_subscription_details, delete_all_schedules, check_subscriber_exists
+from databasefunctions import dbname, endpoint, set_cursor, open_database, store_subscriber, get_subscriber_list, get_schedule, get_team_name, check_subscription_details, delete_all_schedules, check_subscriber_exists, get_player_twitter_handle
 import threading
 from datetime import datetime, timezone
 import multiprocessing
@@ -17,6 +17,8 @@ from score_calculation import Stats
 import pytz
 import schedule
 import decimal
+import pprint
+from datetime import date
 
 # Initializations
 logging.basicConfig(level=logging.INFO)
@@ -189,28 +191,6 @@ def start_tracking(api):
                         team_name = get_team_name(cursor, connection, team_id)
                         player_updates_process = multiprocessing.Process(target=player_updates, args=(delay, api, team_id, team_name, player_id, fixture_id, twitter_handle, original_tweet_id, fixture_timestamp, epoch_now,))
                         player_updates_process.start()
-                        
-
-
-                    # time_diff = abs(fixture_timestamp - epoch_now)
-                    # #if fixture_timestamp > epoch_now and time_diff <= 86400:
-                    # if time_diff <= DAY_SECS: 
-                    #     # TODO update tracking status to True
-                    #     print(twitter_handle)
-                    #     update_tracking_status(twitter_handle, player_id, True)
-
-                    #     print(f"epoch_now is {epoch_now}")
-                    #     print(f"fixture_timestamp is {fixture_timestamp}")
-                    #     print(f"{fixture[3]} vs {fixture[5]} to start at {fixture[6]}")
-                    #     # store_temp_fixture(cursor, connection, fixture)
-                    #     # once the fixture is stored in the temp_fixtures table, we can schedule a call to look up
-                    #     # the table one hour before the event timestamp. 
-                    #     delay = float(time_diff) - float(HOUR_SECS) if time_diff > HOUR_SECS else 0
-                    #     print(delay)
-                    #     # delay = 10
-                    #     team_name = get_team_name(cursor, connection, team_id)
-                    #     player_updates_process = multiprocessing.Process(target=player_updates, args=(delay, api, team_id, team_name, player_id, fixture_id, twitter_handle, original_tweet_id, fixture_timestamp, epoch_now,))
-                    #     player_updates_process.start()
 
         time.sleep(MIN_SECS*5)
 
@@ -254,7 +234,6 @@ def get_team_lineup_status(team_id, team_name, player_id, fixture_id):
     endpoint = f"{LINEUP_ENDPOINT}{fixture_id}"
     # get the dictionary of lineups for both teams. Keys of this dictionary are the team names
     lineups = requests.get(endpoint, headers=headers).json()['api']['lineUps']
-    print(lineups)
     print(f"team id is {team_id}")
 
     teams = list(lineups.keys())
@@ -315,7 +294,9 @@ def get_fixture_events(api, fixture_id, player_id, player_name, tweet_id, twitte
     '''
     tweet_str = f"Here are the updates for {player_name} from the game:\n{create_player_update_tweet_text(player_details)}"
     post_tweet(api, tweet_str, tweet_id)
-    
+    delay = HOUR_SECS
+    scheduler.enter(delay, 1, repost_popular_tweets, (api, player_id, player_name, tweet_id, twitter_handle,))
+    scheduler.run()
     # update tracking status to false once again
     update_tracking_status(twitter_handle, player_id, False)
 
@@ -326,11 +307,7 @@ def create_player_update_tweet_text(player_details):
     # tweet_str = f"He scored {num_goals_scored} goals and provided {num_assists} assists. He played {num_key_passes} key passes and had {num_shots_on_target} shots on target. He tackled {num_tackles} times, blocked {num_blocks} shots and intercepted {num_interceptions} passes. He was taken off after {mins_played} minutes."
     # print(len(tweet_str))
     # start creating the string. 
-    tweet_str = f"Mins played: {player_stats.mins_played}\n\
-    Goals: {player_stats.num_goals_scored}\n\
-    Assists: {player_stats.num_assists}\nShots on target: {player_stats.num_shots_on_target}\nPenalties: {player_stats.num_penalties}\n\
-    Key passes: {player_stats.num_key_passes}\nDribbles: {player_stats.num_dribbles}\nTackles: {player_stats.num_tackles}\nBlocks: {player_stats.num_blocks}\n\
-    Interceptions: {player_stats.num_interceptions}\n"
+    tweet_str = f"Mins played: {player_stats.mins_played}\n\Goals: {player_stats.num_goals_scored}\nAssists: {player_stats.num_assists}\nShots on target: {player_stats.num_shots_on_target}\nPenalties: {player_stats.num_penalties}\nKey passes: {player_stats.num_key_passes}\nDribbles: {player_stats.num_dribbles}\nTackles: {player_stats.num_tackles}\nBlocks: {player_stats.num_blocks}\n\Interceptions: {player_stats.num_interceptions}\n"
     if player_stats.card_yellow == True:
         tweet_str += f"Yellow card: Yes\n"
     if player_stats.card_red == True:
@@ -338,6 +315,54 @@ def create_player_update_tweet_text(player_details):
     tweet_str += f"Impact score: {impact_score}\n"
 
     return tweet_str
+
+def repost_popular_tweets(api, player_id, player_name, tweet_id, twitter_handle):
+    '''
+    Replies with the most popular tweets about the player. Max 5 replies.
+    '''
+    # this will be an array of tweets that we get using the player's name and twitter handle.
+    # let's fetch player's twitter handle from the database
+    twitter_handle = get_player_twitter_handle(player_id)
+    #URLify the player_name, meaning substitute space between first and last names with %20
+    name = player_name.strip().replace(' ', "%20")
+    search_str = f'"{name}"'
+    if twitter_handle is not None:
+        search_str += f'OR {twitter_handle}'
+    tweets = tweepy.Cursor(api.search, 
+                           q='"Marcos%20Alonso" OR @marcosalonso03',
+                           lang="en",
+                           since=date.today(),
+                           tweet_mode='extended').items(100)
+    # we need to collect five tweets that have the highest score among the collected tweets
+    # For that first let's iterate over all the tweets and compute score for each of them. Then we can pick the best ones.
+    top_tweets = sort_top_tweets(tweets)
+
+    for top_tweet in top_tweets:
+        tweet_str = f'https://twitter.com/{top_tweet.user.screen_name}/status/{top_tweet.id}'
+        post_tweet(api, tweet_str, tweet_id)
+
+def sort_top_tweets(tweets):
+    '''
+    Takes a collection of tweets and returns max 5 tweets sorted on the basis of score
+    '''
+    tweet_score_list = []
+    for tweet in tweets:
+        score = compute_tweet_popularity_score(tweet) 
+        tweet_score_list.append((tweet.id, score))
+    
+    tweet_score_list.sort(key = lambda tweet_score: tweet_score[1])
+    num_tweets = 5 if len(tweet_score_list) >= 5 else len(tweet_score_list)
+    top_tweet_tuples = tweet_score_list[:num_tweets]
+    top_tweets = [tweet for tweet in tweets if tweet.id in [next((tweet_id for tweet_id, tweet_score in top_tweet_tuples if tweet_id == tweet.id),0)]]
+
+    return top_tweets
+
+def compute_tweet_popularity_score(tweet):
+    '''
+    Computes score for a given tweet
+    '''
+    score = tweet.favorite_count + tweet.retweet_count 
+    return score
 
 def get_players_from_db(cursor, connection):
     '''
@@ -381,13 +406,17 @@ def get_fixtures(team_id):
     return fixtures_current
 
 def make_first_tweet():
-    # Tweet out the list of players available for tracking
+    '''
+    Tweet out the list of players available for tracking
+    '''
     api = create_api()
     # upload image
     image_response = api.media_upload('players.png')
     print(image_response.media_id_string)
     api.update_status(status="""Here are the players available for tracking. To track the players write '@PlayerTracker2 track <player name>'. Please make sure you spell the name correctly.""",
                          media_ids=[image_response.media_id_string])  
+
+
 
 def main():
     # make_first_tweet()
@@ -415,20 +444,16 @@ def main():
     # Use scheule library not sched. Update every Tuesday
     update_schedules_process = multiprocessing.Process(target=update_schedules)
     update_schedules_process.start()
+    
+    # tweets = tweepy.Cursor(api.search, 
+    #                        q='"Marcos%20Alonso" OR @marcosalonso03',
+    #                        lang="en",
+    #                        since=date.today(),
+    #                        tweet_mode='extended').items(100)
 
-    '''
-    TASKS: 
-    1. Add tracking status to the subscribers table. Boolean.
-    2. Reset tracking status when server is restarting
-    Tracking status should be false when row is added to the subscribers table. It should be updated only when we call the 
-    startTracking() function. startTracking() will identify for which subscriber, player pair we need to start tracking. Based on
-    that, tracking status will be updated. 
-    startTracking() will keep checking for new subscribers every 5 mins. Those records for which tracking status is True, nothing
-    will be done. For those that are still untracked, their status will be updated if the player has a game within 24 hours.
-    Tracking status should be updated to False after the game is over. This can be done before match statistics are shown.
-    Tracking status should also be set to False if the server is restarted.
-    ''' 
-
+    # for tweet in tweets:
+    #     if (not tweet.retweeted) and ('RT @' not in tweet.full_text) and tweet.in_reply_to_status_id is None:
+    #         print(f'https://twitter.com/{tweet.user.screen_name}/status/{tweet.id}', tweet.favorite_count, tweet.retweet_count)
 
 
 if __name__ == "__main__":
