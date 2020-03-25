@@ -451,10 +451,5 @@ def main():
     #                        since=date.today(),
     #                        tweet_mode='extended').items(100)
 
-    # for tweet in tweets:
-    #     if (not tweet.retweeted) and ('RT @' not in tweet.full_text) and tweet.in_reply_to_status_id is None:
-    #         print(f'https://twitter.com/{tweet.user.screen_name}/status/{tweet.id}', tweet.favorite_count, tweet.retweet_count)
-
-
 if __name__ == "__main__":
     main()
