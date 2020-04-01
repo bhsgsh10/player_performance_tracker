@@ -1,5 +1,5 @@
 # player_performance_tracker
-**@PlayerTracker2** is a Twitter bot to allow users to track the performance and conversation around their favorite soccer players. While there are many apps and websites that have performance data on soccer players, a Twitter bot is less intrusive and can be tailored to send updates for only the updates a user has subscribed for. It can also be viewed as a reporting aid as it sends out updates on statistics of players after each game.
+**[@PlayerTracker2](https://twitter.com/PlayerTracker2)** is a Twitter bot to allow users to track the performance and conversation around their favorite soccer players. While there are many apps and websites that have performance data on soccer players, a Twitter bot is less intrusive and can be tailored to send updates for only the updates a user has subscribed for. It can also be viewed as a reporting aid as it sends out updates on statistics of players after each game.
 
 The main features of the bot are listed below:   
 •	Notify users if a player is picked when the lineups are announced.   
@@ -31,7 +31,7 @@ For this project, the bot can track a specific group of players whose names are 
 21.	Adama Traore (Wolverhampton Wanderers).  
 All the players in the list above play in the English Premier League. It is a mix of forwards, midfielders and defenders, though prominent goal scorers have been given preference because they tend to be in the media spotlight. The list can be modified to include more players representing different teams and leagues. Goalkeepers have not been included as the metrics to evaluate other players do not apply to goalkeepers and we would need a different methodology to rate them.
 
-The project was built using Tweepy(Python), PostgreSQL and API-Football.
+The project was built using Tweepy(Python), PostgreSQL and [API-Football](https://www.api-football.com/).
 
 Go to https://twitter.com/PlayerTracker2 to view the list of players you can get updates for. To track a player tweet the following: '@PlayerTracker2 track <player name>'. To stop getting updates tweet '@PlayerTracker2 stop'.
   
