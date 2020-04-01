@@ -31,7 +31,7 @@ For this project, the bot can track a specific group of players whose names are 
 21.	Adama Traore (Wolverhampton Wanderers).  
 All the players in the list above play in the English Premier League. It is a mix of forwards, midfielders and defenders, though prominent goal scorers have been given preference because they tend to be in the media spotlight. The list can be modified to include more players representing different teams and leagues. Goalkeepers have not been included as the metrics to evaluate other players do not apply to goalkeepers and we would need a different methodology to rate them.
 
-Uses Tweepy, PostgreSQL and API-Football.
+The project was built using Tweepy(Python), PostgreSQL and API-Football.
 
 Go to https://twitter.com/PlayerTracker2 to view the list of players you can get updates for. To track a player tweet the following: '@PlayerTracker2 track <player name>'. To stop getting updates tweet '@PlayerTracker2 stop'.
   
