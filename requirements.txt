@@ -62,7 +62,7 @@ parso==0.5.2
 pdfkit==0.6.1
 pexpect==4.7.0
 pickleshare==0.7.5
-Pillow==6.2.1
+Pillow==8.3.2
 plac==0.9.6
 pluggy==0.13.0
 praw==6.4.0
